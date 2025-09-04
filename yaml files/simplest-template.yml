@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Minimal translation service with existing resources'
+
+Resources:
+  # 1. IAM Policy that references EXISTING buckets
+  TranslateS3Policy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: TranslateAndS3AccessPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource: 'arn:aws:s3:::request-bucket-violette/*'
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+            Resource: 'arn:aws:s3:::response-bucket-violette/*'
+          - Effect: Allow
+            Action: translate:TranslateText
+            Resource: '*'
+
+  # 2. Lambda Function using EXISTING role
+  S3TranslationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: S3TranslationFunction
+      Runtime: python3.9
+      Role: arn:aws:iam::852571914072:role/TranslateLambdaExecutionRole  # Full ARN of your existing role
+      Handler: s3_translator.lambda_handler
+      Code:
+        S3Bucket: lambda-code-bucket
+        S3Key: s3_function.zip
+      Timeout: 300
+      Environment:
+        Variables:
+          RESPONSE_BUCKET: 'response-bucket-violette'
+
+  # 3. Lambda Permission for S3
+  S3LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref S3TranslationFunction
+      Principal: s3.amazonaws.com
+      SourceArn: 'arn:aws:s3:::request-bucket-violette'
+
+Outputs:
+  LambdaFunctionName:
+    Description: Name of the Lambda function
+    Value: !Ref S3TranslationFunction
+  PolicyARN:
+    Description: ARN of the IAM Policy
+    Value: !Ref TranslateS3Policy

@@ -1,0 +1,209 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Capstone Project - Translation Service Infrastructure'
+
+Parameters:
+  UserName:
+    Type: String
+    Description: Your name or initials to make bucket names unique.
+
+Resources:
+  # # 1. Create the Request S3 Bucket
+  # RequestBucket:
+  #   Type: AWS::S3::Bucket
+  #   Properties:
+  #     BucketName: !Sub 'request-bucket-${UserName}'
+  #     # Public access is BLOCKED by default, which is secure.
+
+  # # 2. Create the Response S3 Bucket
+  # ResponseBucket:
+  #   Type: AWS::S3::Bucket
+  #   Properties:
+  #     BucketName: !Sub 'response-bucket-${UserName}'
+
+  RequestBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'request-bucket-${UserName}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref TranslationKey
+
+  ResponseBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'response-bucket-${UserName}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref TranslationKey
+
+  # 3. Create the IAM Policy (Grants S3 and Translate permissions)
+  # TranslateS3Policy:
+  #   Type: AWS::IAM::ManagedPolicy
+  #   Properties:
+  #     ManagedPolicyName: !Sub 'TranslateAndS3AccessPolicy-${UserName}'
+  #     PolicyDocument:
+  #       Version: '2012-10-17'
+  #       Statement:
+  #         - Effect: Allow
+  #           Action:
+  #             - s3:GetObject
+  #           Resource: !Sub 'arn:aws:s3:::${RequestBucket}/*'
+  #         - Effect: Allow
+  #           Action:
+  #             - s3:PutObject
+  #           Resource: !Sub 'arn:aws:s3:::${ResponseBucket}/*'
+  #         - Effect: Allow
+  #           Action:
+  #             - translate:TranslateText
+  #           Resource: '*'
+
+  TranslateS3Policy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'TranslateAndS3AccessPolicy-${UserName}'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${RequestBucket}/*'
+            Condition:
+              StringEquals:
+                s3:ExistingObjectTag/Project: TranslateCapstone
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:PutObjectTagging
+            Resource: !Sub 'arn:aws:s3:::${ResponseBucket}/*'
+            Condition:
+              StringEquals:
+                s3:RequestTag/Project: TranslateCapstone
+          - Effect: Allow
+            Action: translate:TranslateText
+            Resource: '*'
+            Condition:
+              NumericLessThanEquals:
+                translate:CharacterCount: 10000
+          - Effect: Allow
+            Action:
+              - kms:Decrypt
+            Resource: !GetAtt TranslationKey.Arn
+            Condition:
+              StringEquals:
+                kms:EncryptionContext:Project: TranslateCapstone
+          - Effect: Allow
+            Action:
+              - kms:GenerateDataKey
+              - kms:Encrypt
+            Resource: !GetAtt TranslationKey.Arn
+
+  # 4. Create the IAM Role for Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'TranslateLambdaExecutionRole-${UserName}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref TranslateS3Policy
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+Outputs:
+  RequestBucketName:
+    Description: Name of the request bucket
+    Value: !Ref RequestBucket
+  ResponseBucketName:
+    Description: Name of the response bucket
+    Value: !Ref ResponseBucket
+  LambdaRoleARN:
+    Description: ARN of the Lambda Execution Role
+    Value: !GetAtt LambdaExecutionRole.Arn
+
+  # API Gateway
+  TranslationApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: TranslationApi
+      Description: API for on-demand text translation
+
+  ApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref TranslationApi
+      ParentId: !GetAtt TranslationApi.RootResourceId
+      PathPart: translate
+
+  ApiMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref TranslationApi
+      ResourceId: !Ref ApiResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiTranslationFunction.Arn}/invocations
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref TranslationApi
+      StageName: prod
+
+  # New Lambda function for API
+  ApiTranslationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ApiTranslationFunction
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: api_handler.lambda_handler
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          translate = boto3.client('translate')
+          def lambda_handler(event, context):
+              # ... [paste the full code from api_handler.py here]
+      Timeout: 30
+
+  # Permission for API Gateway to invoke Lambda
+  ApiLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ApiTranslationFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TranslationApi}/*/POST/translate
+
+  TranslationKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Key for encrypting translation data
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: '*'
+
+  TranslationKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/translation-key
+      TargetKeyId: !Ref TranslationKey

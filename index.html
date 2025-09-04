@@ -1,0 +1,412 @@
+<!-- const API_URL = 'https://gmhfncpvzi.execute-api.eu-north-1.amazonaws.com/prod/translate';
+
+async function translateText() {
+    const text = document.getElementById('textInput').value;
+    const sourceLang = document.getElementById('sourceLang').value;
+    const targetLang = document.getElementById('targetLang').value;
+    const resultDiv = document.getElementById('translationResult');
+
+    if (!text.trim()) {
+        resultDiv.innerHTML = '<div class="error">Please enter some text to translate</div>';
+        return;
+    }
+
+    resultDiv.innerHTML = 'Translating...';
+
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+                source_language: sourceLang, 
+                target_language: targetLang, 
+                text: text 
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            // Parse the nested body content
+            const result = JSON.parse(data.body);
+            resultDiv.innerHTML = `
+                <div class="result">
+                    <strong>Original (${result.source_language}):</strong> ${result.original_text}<br><br>
+                    <strong>Translated (${result.target_language}):</strong> ${result.translated_text}
+                </div>
+            `;
+        } else {
+            resultDiv.innerHTML = `<div class="error">API Error: ${data.error}</div>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<div class="error">Network error: ${error.message}</div>`;
+    }
+} -->
+
+
+
+
+
+
+
+
+
+<!-- const API_URL = 'https://gmhfncpvzi.execute-api.eu-north-1.amazonaws.com/prod/translate';
+
+async function translateText() {
+    const text = document.getElementById('textInput').value;
+    const sourceLang = document.getElementById('sourceLang').value;
+    const targetLang = document.getElementById('targetLang').value;
+    const resultDiv = document.getElementById('translationResult');
+
+    if (!text.trim()) {
+        resultDiv.innerHTML = '<div class="error">Please enter some text to translate</div>';
+        return;
+    }
+
+    resultDiv.innerHTML = 'Translating...';
+
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+                source_language: sourceLang, 
+                target_language: targetLang, 
+                text: text 
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            // Parse the nested body content
+            const result = JSON.parse(data.body);
+            resultDiv.innerHTML = `
+                <div class="result">
+                    <strong>Original (${result.source_language}):</strong> ${result.original_text}<br><br>
+                    <strong>Translated (${result.target_language}):</strong> ${result.translated_text}
+                </div>
+            `;
+        } else {
+            resultDiv.innerHTML = `<div class="error">API Error: ${data.error}</div>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<div class="error">Network error: ${error.message}</div>`;
+    }
+} -->
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Translation Portal - Violette</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+        .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #0073bb; text-align: center; }
+        .section { margin: 25px 0; padding: 20px; border: 2px solid #e1e1e1; border-radius: 8px; }
+        textarea, input, select { width: 100%; padding: 12px; margin: 8px 0; border: 2px solid #ddd; border-radius: 4px; font-size: 16px; }
+        button { background: #0073bb; color: white; padding: 15px 25px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; margin: 10px 0; }
+        button:hover { background: #005a8f; }
+        .result { background: #e8f5e8; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        .error { background: #ffe6e6; color: #d8000c; padding: 15px; border-radius: 5px; }
+        .file-list { background: #f0f8ff; padding: 15px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Translation Portal - AWS Capstone Project</h1>
+        
+        <div class="section">
+            <h2>S3 File Translation</h2>
+            <p>Upload a JSON file to S3 for automated processing:</p>
+            <input type="file" id="fileInput" accept=".json">
+            <button onclick="uploadFile()">Upload to S3 for Translation</button>
+            <div id="uploadStatus"></div>
+        </div>
+
+        <div class="section">
+            <h2>Instant HTTP Translation</h2>
+            <textarea id="textInput" placeholder="Enter text to translate (e.g., Hello, world!)" rows="3"></textarea>
+            <div style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                    <label>From:</label>
+                    <select id="sourceLang">
+                        <option value="en">English</option>
+                        <option value="es">Spanish</option>
+                        <option value="fr">French</option>
+                        <option value="de">German</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label>To:</label>
+                    <select id="targetLang">
+                        <option value="es">Spanish</option>
+                        <option value="fr">French</option>
+                        <option value="de">German</option>
+                        <option value="it">Italian</option>
+                    </select>
+                </div>
+            </div>
+            <button onclick="translateText()">Translate Now via API</button>
+            <div id="translationResult"></div>
+        </div>
+
+        <div class="section">
+            <h2>Translation Results</h2>
+            <button onclick="listFiles()">Refresh File List</button>
+            <div id="fileList" class="file-list"></div>
+        </div>
+    </div>
+
+    <script>
+        // Update this with your actual API Gateway URL
+        const API_URL = 'https://gmhfncpvzi.execute-api.eu-north-1.amazonaws.com/prod/translate';
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const statusDiv = document.getElementById('uploadStatus');
+            
+            if (!fileInput.files[0]) {
+                statusDiv.innerHTML = '<div class="error">Please select a JSON file first</div>';
+                return;
+            }
+
+            statusDiv.innerHTML = 'Uploading to S3...';
+            
+            try {
+                // Create a simple presigned URL upload (for demo purposes)
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    try {
+                        const jsonContent = JSON.parse(e.target.result);
+                        statusDiv.innerHTML = `<div class="result">File ready for S3 upload! Manually upload to: request-bucket-violette</div>`;
+                    } catch (error) {
+                        statusDiv.innerHTML = `<div class="error">Invalid JSON file: ${error.message}</div>`;
+                    }
+                };
+                
+                reader.readAsText(file);
+                
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">Upload error: ${error.message}</div>`;
+            }
+        }
+        async function translateText() {
+    const text = document.getElementById('textInput').value;
+    const sourceLang = document.getElementById('sourceLang').value;
+    const targetLang = document.getElementById('targetLang').value;
+    const resultDiv = document.getElementById('translationResult');
+
+    if (!text.trim()) {
+        resultDiv.innerHTML = '<div class="error">Please enter some text to translate</div>';
+        return;
+    }
+
+    resultDiv.innerHTML = 'Translating...';
+
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+                source_language: sourceLang, 
+                target_language: targetLang, 
+                text: text 
+            })
+        });
+        
+        const data = await response.json();
+        console.log("Full API response:", data);
+        if (response.ok) {
+            // The actual data is in data.body, and it's a JSON string that needs parsing
+            const result = JSON.parse(data.body);
+            resultDiv.innerHTML = `
+                <div class="result">
+                    <strong>Original (${result.source_language}):</strong> ${result.original_text}<br><br>
+                    <strong>Translated (${result.target_language}):</strong> ${result.translated_text}
+                </div>
+            `;
+        } else {
+            resultDiv.innerHTML = `<div class="error">API Error: ${data.error}</div>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+    }
+}
+        // async function translateText() {
+        //     const text = document.getElementById('textInput').value;
+        //     const sourceLang = document.getElementById('sourceLang').value;
+        //     const targetLang = document.getElementById('targetLang').value;
+        //     const resultDiv = document.getElementById('translationResult');
+
+        //     if (!text.trim()) {
+        //         resultDiv.innerHTML = '<div class="error">Please enter some text to translate</div>';
+        //         return;
+        //     }
+
+        //     resultDiv.innerHTML = 'Translating...';
+
+        //     try {
+        //         const response = await fetch(API_URL, {
+        //             method: 'POST',
+        //             headers: { 
+        //                 'Content-Type': 'application/json',
+        //             },
+        //             body: JSON.stringify({ 
+        //                 source_language: sourceLang, 
+        //                 target_language: targetLang, 
+        //                 text: text 
+        //             })
+        //         });
+                
+        //         const data = await response.json();
+                
+        //         if (response.ok) {
+        //             resultDiv.innerHTML = `
+        //                 <div class="result">
+        //                     <strong>Original (${sourceLang}):</strong> ${data.original_text}<br><br>
+        //                     <strong>Translated (${targetLang}):</strong> ${data.translated_text}
+        //                 </div>
+        //             `;
+        //         } else {
+        //             resultDiv.innerHTML = `<div class="error">API Error: ${data.error}</div>`;
+        //         }
+        //     } catch (error) {
+        //         resultDiv.innerHTML = `<div class="error">Network error: ${error.message}</div>`;
+        //     }
+        // }
+
+        function listFiles() {
+            const fileListDiv = document.getElementById('fileList');
+            fileListDiv.innerHTML = 'Files will be organized by language in the response-bucket-violette S3 bucket';
+        }
+
+        // Load sample text for testing
+        document.getElementById('textInput').value = "Hello, world! This is my AWS capstone project.";
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+<!-- <!DOCTYPE html>
+<html>
+<head>
+    <title>Translation Portal</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .section { margin: 20px 0; padding: 20px; border: 1px solid #ccc; border-radius: 5px; }
+        textarea, input { width: 100%; padding: 8px; margin: 5px 0; }
+        button { background: #0073bb; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; }
+        .result { background: #f5f5f5; padding: 15px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🌍 Translation Portal</h1>
+    
+    <div class="section">
+        <h2>📤 Upload JSON for Translation</h2>
+        <input type="file" id="fileInput" accept=".json">
+        <button onclick="uploadFile()">Upload for Translation</button>
+        <div id="uploadStatus"></div>
+    </div>
+
+    <div class="section">
+        <h2>⚡ Instant Translation</h2>
+        <textarea id="textInput" placeholder="Enter text to translate" rows="3"></textarea>
+        <select id="sourceLang">
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+        </select>
+        <select id="targetLang">
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+            <option value="de">German</option>
+        </select>
+        <button onclick="translateText()">Translate Now</button>
+        <div id="translationResult" class="result"></div>
+    </div>
+
+    <div class="section">
+        <h2>📁 View Translated Files</h2>
+        <button onclick="listFiles()">Refresh File List</button>
+        <div id="fileList"></div>
+    </div>
+
+    <script>
+        const API_URL = 'https://your-api-id.execute-api.eu-north-1.amazonaws.com/prod/translate';
+        
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const statusDiv = document.getElementById('uploadStatus');
+            
+            if (!fileInput.files[0]) {
+                statusDiv.innerHTML = 'Please select a file first';
+                return;
+            }
+
+            try {
+                statusDiv.innerHTML = 'Uploading...';
+                // This would use the S3 pre-signed URL pattern in production
+                statusDiv.innerHTML = 'File uploaded! Check the response bucket for results.';
+            } catch (error) {
+                statusDiv.innerHTML = 'Error: ' + error.message;
+            }
+        }
+
+        async function translateText() {
+            const text = document.getElementById('textInput').value;
+            const sourceLang = document.getElementById('sourceLang').value;
+            const targetLang = document.getElementById('targetLang').value;
+            const resultDiv = document.getElementById('translationResult');
+
+            if (!text) {
+                resultDiv.innerHTML = 'Please enter some text';
+                return;
+            }
+
+            try {
+                resultDiv.innerHTML = 'Translating...';
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source_language: sourceLang, target_language: targetLang, text: text })
+                });
+                
+                const data = await response.json();
+                resultDiv.innerHTML = `<strong>Translated:</strong> ${data.translated_text}`;
+            } catch (error) {
+                resultDiv.innerHTML = 'Error: ' + error.message;
+            }
+        }
+
+        function listFiles() {
+            document.getElementById('fileList').innerHTML = 
+                'File listing would connect to S3 API in production';
+        }
+    </script>
+</body>
+</html> -->

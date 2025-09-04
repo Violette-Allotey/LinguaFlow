@@ -1,0 +1,267 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Complete Capstone Project - Translation Service with API, KMS, and Security'
+
+Parameters:
+  UserName:
+    Type: String
+    Description: Your name or initials to make bucket names unique.
+
+Resources:
+  # 1. KMS Key for Encryption
+  TranslationKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Key for encrypting translation data
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: '*'
+
+  TranslationKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/translation-key
+      TargetKeyId: !Ref TranslationKey
+
+  # 2. S3 Buckets with KMS Encryption
+  RequestBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'request-bucket-${UserName}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref TranslationKey
+
+  ResponseBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'response-bucket-${UserName}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref TranslationKey
+
+  # 3. IAM Role and Policy with Least Privilege
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'TranslateLambdaExecutionRole-${UserName}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  TranslateS3Policy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'TranslateAndS3AccessPolicy-${UserName}'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${RequestBucket}/*'
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+            Resource: !Sub 'arn:aws:s3:::${ResponseBucket}/*'
+          - Effect: Allow
+            Action: translate:TranslateText
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey
+            Resource: !GetAtt TranslationKey.Arn
+
+  # 4. S3-Triggered Lambda Function (Original)
+  S3TranslationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'S3TranslationFunction-${UserName}'
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: lambda_function.lambda_handler
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import urllib.parse
+          
+          s3 = boto3.client('s3')
+          translate = boto3.client('translate')
+          
+          def get_language_folder(language_code):
+              language_map = {'en': 'english', 'es': 'spanish', 'fr': 'french', 'de': 'german', 'it': 'italian'}
+              return language_map.get(language_code, 'other')
+          
+          def lambda_handler(event, context):
+              try:
+                  bucket = event['Records'][0]['s3']['bucket']['name']
+                  key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
+                  
+                  # Get the file from S3
+                  response = s3.get_object(Bucket=bucket, Key=key)
+                  file_content = response['Body'].read().decode('utf-8')
+                  data = json.loads(file_content)
+                  
+                  # Translate
+                  translation = translate.translate_text(
+                      Text=data['text'],
+                      SourceLanguageCode=data['source_language'],
+                      TargetLanguageCode=data['target_language']
+                  )
+                  
+                  # Prepare output
+                  output_data = {
+                      'original_text': data['text'],
+                      'translated_text': translation['TranslatedText'],
+                      'source_language': data['source_language'],
+                      'target_language': data['target_language']
+                  }
+                  
+                  # Save to response bucket with language folder
+                  target_lang = data['target_language']
+                  new_key = f"{get_language_folder(target_lang)}/translated-{key}"
+                  
+                  s3.put_object(
+                      Bucket='response-bucket-violette',  # Update with your bucket name
+                      Key=new_key,
+                      Body=json.dumps(output_data, ensure_ascii=False),
+                      ContentType='application/json'
+                  )
+                  
+                  return {'statusCode': 200, 'body': 'Success'}
+                  
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  return {'statusCode': 500, 'body': f"Error: {str(e)}"}
+      Timeout: 300
+      Environment:
+        Variables:
+          RESPONSE_BUCKET: !Ref ResponseBucket
+
+  # 5. API Gateway and API Lambda Function
+  ApiTranslationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'ApiTranslationFunction-${UserName}'
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: api_handler.lambda_handler
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          
+          translate = boto3.client('translate')
+          
+          def lambda_handler(event, context):
+              try:
+                  body = json.loads(event['body'])
+                  source_lang = body['source_language']
+                  target_lang = body['target_language']
+                  text = body['text']
+                  
+                  response = translate.translate_text(
+                      Text=text,
+                      SourceLanguageCode=source_lang,
+                      TargetLanguageCode=target_lang
+                  )
+                  
+                  return {
+                      'statusCode': 200,
+                      'headers': {'Content-Type': 'application/json'},
+                      'body': json.dumps({
+                          'original_text': text,
+                          'translated_text': response['TranslatedText'],
+                          'source_language': source_lang,
+                          'target_language': target_lang
+                      })
+                  }
+                  
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'error': str(e)})
+                  }
+      Timeout: 30
+
+  TranslationApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub 'TranslationApi-${UserName}'
+      Description: API for on-demand text translation
+
+  ApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref TranslationApi
+      ParentId: !GetAtt TranslationApi.RootResourceId
+      PathPart: translate
+
+  ApiMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref TranslationApi
+      ResourceId: !Ref ApiResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiTranslationFunction.Arn}/invocations
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref TranslationApi
+      StageName: prod
+
+  ApiLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ApiTranslationFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${TranslationApi}/*/POST/translate
+
+  # 6. S3 Lambda Permission
+  S3LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref S3TranslationFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub arn:aws:s3:::${RequestBucket}
+
+Outputs:
+  RequestBucketName:
+    Description: Name of the request bucket
+    Value: !Ref RequestBucket
+  ResponseBucketName:
+    Description: Name of the response bucket
+    Value: !Ref ResponseBucket
+  ApiUrl:
+    Description: URL for the Translation API
+    Value: !Sub https://${TranslationApi}.execute-api.${AWS::Region}.amazonaws.com/prod/translate
+  FrontendInstructions:
+    Description: Instructions for deploying the frontend
+    Value: !Sub |
+      Upload index.html to ${ResponseBucket} and enable static website hosting.

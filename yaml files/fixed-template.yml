@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Fixed Capstone Project Template'
+
+Parameters:
+  UserName:
+    Type: String
+    Description: Your name or initials to make bucket names unique.
+    Default: violette
+
+Resources:
+  # S3 Buckets
+  RequestBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'request-bucket-${UserName}'
+
+  ResponseBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'response-bucket-${UserName}'
+
+  # IAM Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'TranslateLambdaExecutionRole-${UserName}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # IAM Policy
+  TranslateS3Policy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub 'TranslateAndS3AccessPolicy-${UserName}'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${RequestBucket}/*'
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+            Resource: !Sub 'arn:aws:s3:::${ResponseBucket}/*'
+          - Effect: Allow
+            Action: translate:TranslateText
+            Resource: '*'
+
+  # S3 Translation Lambda
+  S3TranslationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'S3TranslationFunction-${UserName}'
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: s3_translator.lambda_handler
+      Code:
+        S3Bucket: lambda-code-bucket-violette
+        S3Key: s3_function.zip
+      Timeout: 300
+      Environment:
+        Variables:
+          RESPONSE_BUCKET: !Ref ResponseBucket
+
+Outputs:
+  RequestBucketName:
+    Description: Name of the request bucket
+    Value: !Ref RequestBucket
+  ResponseBucketName:
+    Description: Name of the response bucket
+    Value: !Ref ResponseBucket
+
+  S3BucketNotification:
+    Type: AWS::S3::Bucket
+    Properties:
+      Bucket: !Ref RequestBucket
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: 's3:ObjectCreated:*'
+            Function: !GetAtt S3TranslationFunction.Arn
+
+  S3LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref S3TranslationFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub arn:aws:s3:::${RequestBucket}

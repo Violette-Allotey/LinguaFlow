@@ -1,0 +1,5 @@
+{
+  "source_language": "en",
+  "target_language": "es",
+  "text": "I can contribute to scaling efforts by focusing on both technical optimization and process improvements. On the technical side, I would implement auto scaling, database scaling strategies (read replicas, caching, sharding), and use CDNs to handle global traffic efficiently. I’d also monitor system metrics with tools like CloudWatch or Prometheus to identify bottlenecks early. On the process side, I’d support building automation pipelines, infrastructure-as-code, and resilience patterns like circuit breakers to ensure smooth scaling as demand grows."
+}
